@@ -3,6 +3,7 @@
 #
 # Author: Just van den Broecke (generic and VsiFileExtractor)
 # Author: Frank Steggink (ZipFileExtractor)
+# Author: Ynte de Wolff (Dynamic output path)
 #
 import os.path
 from stetl.component import Config
@@ -52,6 +53,16 @@ class FileExtractor(Filter):
     def __init__(self, configdict, section, consumes=FORMAT.any, produces=FORMAT.string):
         Filter.__init__(self, configdict, section, consumes=consumes, produces=produces)
 
+    @staticmethod
+    def save_path(path):
+        return path.replace('/', '_')
+
+    def output_path(self, packet):
+        if '%s' in self.file_path:
+            return self.file_path % self.save_path(packet.data['name'])
+        else:
+            return self.file_path
+
     def delete_target_file(self):
         if os.path.isfile(self.file_path):
             os.remove(self.file_path)
@@ -68,10 +79,10 @@ class FileExtractor(Filter):
         # Optionally remove old file
         self.delete_target_file()
         self.extract_file(packet)
-        packet.data = self.file_path
+        packet.data = self.output_path(packet)
 
-        if not os.path.isfile(self.file_path):
-            log.warn('Extracted file {} does not exist'.format(self.file_path))
+        if not os.path.isfile(packet.data):
+            log.warn('Extracted file {} does not exist'.format(packet.data))
             packet.data = None
 
         return packet
@@ -101,7 +112,7 @@ class ZipFileExtractor(FileExtractor):
         import zipfile
 
         with zipfile.ZipFile(packet.data['file_path']) as z:
-            with open(self.file_path, 'wb') as f:
+            with open(self.output_path(packet), 'wb') as f:
                 with z.open(packet.data['name']) as zf:
                     while True:
                         buffer = zf.read(self.buffer_size)

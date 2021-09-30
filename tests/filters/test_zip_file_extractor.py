@@ -55,3 +55,19 @@ class ZipFileExtractorTest(StetlTestCase):
         file_path = self.etl.configdict.get(section, 'file_path')
         self.assertTrue(os.path.exists(file_path))
         os.remove(file_path)
+
+    def test_dynamic_output(self):
+        cfg_dict = {'config_file': os.path.join(self.curr_dir, 'configs/zipfileextractordynamicoutput.cfg')}
+        self.etl = ETL(cfg_dict)
+
+        chain = StetlTestCase.get_chain(self.etl)
+        chain.run()
+
+        # Check if both GML files have been extracted to seperate paths
+        section = StetlTestCase.get_section(chain, 1)
+        output_dir = self.etl.configdict.get(section, 'file_path')[:-2]  # strip %s
+        extracted_files = [file_name for file_name in os.listdir(output_dir) if file_name.endswith('.gml')]
+        self.assertEqual(2, len(extracted_files))
+
+        for extracted_file in extracted_files:
+            os.remove(os.path.join(output_dir, extracted_file))
