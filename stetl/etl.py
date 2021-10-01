@@ -5,6 +5,8 @@
 import os
 import re
 import sys
+from collections import deque
+from multiprocessing import Pool
 from configparser import ConfigParser, ExtendedInterpolation
 from io import StringIO
 from . import version
@@ -149,12 +151,36 @@ class ETL:
         # Multiple Chains may be specified in the config
         chains_str_arr = chains_str.split(',')
         for chain_str in chains_str_arr:
-            # Build single Chain of components and let it run
-            chain = Chain(chain_str, self.configdict)
-            chain.assemble()
+            if '||' in chain_str:
+                log.info('Found multiprocessing break in chain')
+                chain_parts = chain_str.split('||')
 
-            # Run the ETL for this Chain
-            chain.run()
+                start_chain = Chain(chain_parts[0], self.configdict)
+                start_chain.assemble()
+
+                subsequent_chain = Chain(chain_parts[1], self.configdict)
+                subsequent_chain.assemble()
+                subsequent_chain.init_chain()
+
+                processes = int(self.configdict.get(config_section, 'processes', fallback=1))
+                chunks = int(self.configdict.get(config_section, 'chunks', fallback=1))
+
+                log.info('Iterating over chain %s in chunks of %d', chain_parts[0], chunks)
+                log.info('Running chain %s in a pool of %d workers', chain_parts[1], processes)
+
+                with Pool(processes=processes) as pool:
+                    t = pool.imap(subsequent_chain.invoke, start_chain, chunks)
+                    deque(t)
+
+                subsequent_chain.exit_chain()
+
+            else:
+                # Build single Chain of components and let it run
+                chain = Chain(chain_str, self.configdict)
+                chain.assemble()
+
+                # Run the ETL for this Chain
+                chain.run()
 
         Util.end_timer(t1, "total ETL")
 
