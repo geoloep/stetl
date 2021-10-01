@@ -3,6 +3,7 @@
 # Author: Just van den Broecke
 #
 
+from collections import deque
 from .factory import factory
 from .packet import Packet
 from .util import Util
@@ -27,6 +28,13 @@ class Chain:
         self.cur_comp = None
         self.config_dict = config_dict
         self.chain_str = chain_str.strip()
+
+        self.rounds = 0
+        self.init_done = False
+        self.end_of_stream = False
+
+    def __iter__(self):
+        return self
 
     def assemble(self):
         """
@@ -151,31 +159,56 @@ class Chain:
 
         return cur_comp
 
-    def run(self):
+    def init_chain(self):
         """
-        Run the ETL Chain.
-        :return:
+        One time init for entire chain
         """
         log.info('Running Chain: %s' % self.chain_str)
-
-        # One time init for entire Chain
         self.first_comp.do_init()
+        self.init_done = True
 
-        # Do ETL as long as input available in Packet
-        packet = Packet()
-        rounds = 0
-        try:
-            while not packet.is_end_of_stream():
-                # try:
-                # Invoke the first component to start the chain
-                packet.init()
-                packet = self.first_comp.process(packet)
-                rounds += 1
-                #            except (Exception), e:
-                #                log.error("Fatal Error in ETL: %s"% str(e))
-                #                break
-        finally:
-            # Always one time exit for entire Chain
-            self.first_comp.do_exit()
+    def exit_chain(self):
+        """
+        One time exit for entire chain
+        """
+        self.end_of_stream = True
+        self.first_comp.do_exit()
+        log.info('DONE - %d rounds - chain=%s ' % (self.rounds, self.chain_str))
 
-        log.info('DONE - %d rounds - chain=%s ' % (rounds, self.chain_str))
+    def invoke(self, packet):
+        """
+        Invoke chain for single packet
+        """
+        if not self.init_done:
+            raise Exception('Chain not initialised')
+
+        self.first_comp.process(packet)
+
+    def __next__(self):
+        """
+        Iterate over chain
+        """
+        if self.end_of_stream:
+            raise StopIteration
+
+        if not self.init_done:
+            self.init_chain()
+
+        packet = self.first_comp.process(Packet())
+
+        self.rounds += 1
+
+        if packet.is_end_of_stream():
+            self.exit_chain()
+
+        # To reduce problems when handing packet over to other processes
+        packet.component = None
+
+        return packet
+
+    def run(self):
+        """
+        Run the ETL Chain. Can only be run once
+        :return:
+        """
+        deque(self)
