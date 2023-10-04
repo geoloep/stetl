@@ -5,6 +5,7 @@ from stetl.etl import ETL
 from stetl.filters.fileextractor import VsiFileExtractor
 from tests.stetl_test_case import StetlTestCase
 
+
 class VsiFileExtractorTest(StetlTestCase):
     """Unit tests for VsiFileExtractor plus deprecation"""
 
@@ -15,7 +16,7 @@ class VsiFileExtractorTest(StetlTestCase):
         self.curr_dir = os.path.dirname(os.path.realpath(__file__))
         cfg_dict = {'config_file': os.path.join(self.curr_dir, 'configs/vsifileextractor.cfg')}
         self.etl = ETL(cfg_dict)
-    
+
     def test_class(self):
         chain = StetlTestCase.get_chain(self.etl)
         section = StetlTestCase.get_section(chain, 1)
@@ -26,7 +27,7 @@ class VsiFileExtractorTest(StetlTestCase):
         chain = StetlTestCase.get_chain(self.etl)
 
         self.assertTrue(isinstance(chain.first_comp.next, VsiFileExtractor))
-        
+
     @mock.patch('stetl.filters.fileextractor.VsiFileExtractor.after_chain_invoke', autospec=True)
     def test_execute_gml(self, mock_after_chain_invoke):
         chain = StetlTestCase.get_chain(self.etl)
@@ -91,3 +92,40 @@ class VsiFileExtractorTest(StetlTestCase):
         file_path = self.etl.configdict.get(section, 'file_path')
         self.assertTrue(os.path.exists(file_path))
         os.remove(file_path)
+
+    @mock.patch('stetl.filters.fileextractor.VsiFileExtractor.after_chain_invoke', autospec=True)
+    def test_execute_bag_zip(self, mock_after_chain_invoke):
+        chain = StetlTestCase.get_chain(self.etl, index=3)
+        chain.run()
+
+        # ZIP file contains 2 valid BAG zip files (and 2 non-valid)
+        # in various zipfiles and is extracted; count is 3 because of final
+        # call, so the VsiFileExtractor can indicate that no more files can be found.
+        self.assertTrue(mock_after_chain_invoke.called)
+        self.assertEqual(3, mock_after_chain_invoke.call_count)
+
+        # Check if temp file exists
+        section = StetlTestCase.get_section(chain, 1)
+        file_path = self.etl.configdict.get(section, 'file_path')
+        self.assertTrue(os.path.exists(file_path))
+        os.remove(file_path)
+
+    @mock.patch('stetl.filters.fileextractor.VsiFileExtractor.after_chain_invoke', autospec=True)
+    def test_dynamic_output(self, mock_after_chain_invoke):
+        chain = StetlTestCase.get_chain(self.etl, index=4)
+        chain.run()
+
+        # ZIP file contains 2 valid BAG zip files (and 2 non-valid)
+        # in various zipfiles and is extracted; count is 3 because of final
+        # call, so the VsiFileExtractor can indicate that no more files can be found.
+        self.assertTrue(mock_after_chain_invoke.called)
+        self.assertEqual(3, mock_after_chain_invoke.call_count)
+
+        # Check if both expected zip files exist
+        section = StetlTestCase.get_section(chain, 1)
+        output_dir = self.etl.configdict.get(section, 'file_path')[: -2]  # strip %s
+        extracted_files = [file_name for file_name in os.listdir(output_dir) if file_name.endswith('.zip')]
+        self.assertEqual(2, len(extracted_files))
+
+        for extracted_file in extracted_files:
+            os.remove(os.path.join(output_dir, extracted_file))

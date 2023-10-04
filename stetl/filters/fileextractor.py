@@ -5,6 +5,7 @@
 # Author: Frank Steggink (ZipFileExtractor)
 # Author: Ynte de Wolff (Dynamic output path)
 #
+import re
 import os.path
 from stetl.component import Config
 from stetl.filter import Filter
@@ -54,18 +55,15 @@ class FileExtractor(Filter):
         Filter.__init__(self, configdict, section, consumes=consumes, produces=produces)
 
     @staticmethod
-    def save_path(path):
-        return path.replace('/', '_')
+    def safe_filename(name):
+        return re.sub(r'[^a-zA-Z0-9.]', '_', name)
 
-    def output_path(self, packet):
-        if '%s' in self.file_path:
-            return self.file_path % self.save_path(packet.data['name'])
-        else:
-            return self.file_path
+    def output_path(self, _packet):
+        return self.file_path
 
-    def delete_target_file(self):
-        if os.path.isfile(self.file_path):
-            os.remove(self.file_path)
+    def delete_target_file(self, packet):
+        if os.path.isfile(self.output_path(packet)):
+            os.remove(self.output_path(packet))
 
     def extract_file(self, packet):
         log.error('Only classes derived from FileExtractor can be used!')
@@ -77,7 +75,7 @@ class FileExtractor(Filter):
             return packet
 
         # Optionally remove old file
-        self.delete_target_file()
+        self.delete_target_file(packet)
         self.extract_file(packet)
         packet.data = self.output_path(packet)
 
@@ -91,7 +89,7 @@ class FileExtractor(Filter):
         if not self.delete_file:
             return
 
-        self.delete_target_file()
+        self.delete_target_file(packet)
 
         return True
 
@@ -106,6 +104,13 @@ class ZipFileExtractor(FileExtractor):
 
     def __init__(self, configdict, section):
         FileExtractor.__init__(self, configdict, section, consumes=FORMAT.record)
+
+    def output_path(self, packet):
+        if type(packet.data) == dict and '%s' in self.file_path:
+            # typeof packet.data = Dict{name: string, file_path: string}
+            return self.file_path % self.safe_filename(packet.data['name'])
+        else:
+            return self.file_path
 
     def extract_file(self, packet):
 
@@ -139,6 +144,13 @@ class VsiFileExtractor(FileExtractor):
     def __init__(self, configdict, section):
         FileExtractor.__init__(self, configdict, section, consumes=FORMAT.gdal_vsi_path)
 
+    def output_path(self, packet):
+        if type(packet.data) == str and '%s' in self.file_path:
+            # typeof packet.data = String
+            return self.file_path % self.safe_filename(packet.data)
+        else:
+            return self.file_path
+
     def extract_file(self, packet):
         from stetl.util import gdal
 
@@ -151,7 +163,7 @@ class VsiFileExtractor(FileExtractor):
             # gdal.VSIF does not support 'with' so old-school open/close.
             log.info('Extracting {}'.format(vsi_file_path))
             vsi = gdal.VSIFOpenL(vsi_file_path, 'rb')
-            with open(self.file_path, 'wb') as f:
+            with open(self.output_path(packet), 'wb') as f:
                 gdal.VSIFSeekL(vsi, 0, 2)
                 vsi_len = gdal.VSIFTellL(vsi)
                 gdal.VSIFSeekL(vsi, 0, 0)
