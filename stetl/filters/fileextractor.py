@@ -89,6 +89,8 @@ class FileExtractor(Filter):
         if not self.delete_file:
             return
 
+        # This does not work with a dynamic output path because packet is None!
+        # We cannot reconstruct the output path
         self.delete_target_file(packet)
 
         return True
