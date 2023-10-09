@@ -2,6 +2,7 @@
 #
 # Author: Just van den Broecke 2021
 #
+import re
 import os.path
 from stetl.component import Config
 from stetl.filter import Filter
@@ -48,8 +49,15 @@ class ArchiveExpander(Filter):
     def __init__(self, configdict, section, consumes, produces):
         Filter.__init__(self, configdict, section, consumes=consumes, produces=produces)
         self.input_archive_file = None
-        if not os.path.exists(self.target_dir):
-            os.mkdir(self.target_dir)
+
+    @staticmethod
+    def safe_filename(name):
+        return re.sub(r'[^a-zA-Z0-9.]', '_', name)
+
+    def output_path(self, packet):
+        if type(packet.data) == str and '%s' in self.target_dir:
+            return self.target_dir % self.safe_filename(packet.data)
+        return self.target_dir
 
     def remove_file(self, file_path):
         if os.path.isfile(file_path):
@@ -66,7 +74,7 @@ class ArchiveExpander(Filter):
 
                 os.remove(file_object_path)
 
-    def expand_archive(self, packet):
+    def expand_archive(self, packet, output_path):
         log.error('Only classes derived from ArchiveExpander can be used!')
 
     def invoke(self, packet):
@@ -75,25 +83,27 @@ class ArchiveExpander(Filter):
             log.info("Input data is empty")
             return packet
 
+        formatted_output_path = self.output_path(packet)
+
         # Optionally clear target dir
-        self.wipe_dir(self.target_dir)
+        self.wipe_dir(formatted_output_path)
 
         self.input_archive_file = packet.data
 
         # Let derived class provide archive expansion (.zip, .tar etc)
-        self.expand_archive(self.input_archive_file)
-        if not os.listdir(self.target_dir):
-            log.warn('No expanded files in {}'.format(self.target_dir))
+        self.expand_archive(self.input_archive_file, formatted_output_path)
+        if not os.listdir(formatted_output_path):
+            log.warn('No expanded files in {}'.format(formatted_output_path))
             packet.data = None
             return packet
 
         # ASSERT: expanded files in target dir
-        file_count = len(os.listdir(self.target_dir))
+        file_count = len(os.listdir(formatted_output_path))
         log.info('Expanded {} into {} OK - filecount={}'.format(
-            self.input_archive_file, self.target_dir, file_count))
+            self.input_archive_file, formatted_output_path, file_count))
 
         # Output the target dir path where expanded files are found
-        packet.data = self.target_dir
+        packet.data = formatted_output_path
 
         return packet
 
@@ -102,7 +112,7 @@ class ArchiveExpander(Filter):
             self.remove_file(self.input_archive_file)
 
         if self.clear_target_dir:
-            self.wipe_dir(self.target_dir)
+            self.wipe_dir(self.output_path(packet))
 
         return True
 
@@ -117,11 +127,11 @@ class ZipArchiveExpander(ArchiveExpander):
     def __init__(self, configdict, section):
         ArchiveExpander.__init__(self, configdict, section, consumes=FORMAT.string, produces=FORMAT.string)
 
-    def expand_archive(self, file_path):
+    def expand_archive(self, file_path, output_path):
 
         import zipfile
         if not file_path.lower().endswith('zip'):
             log.warn('No zipfile passed: {}'.format(file_path))
             return
 
-        zipfile.ZipFile(file_path).extractall(path=self.target_dir)
+        zipfile.ZipFile(file_path).extractall(path=output_path)

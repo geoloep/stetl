@@ -5,6 +5,7 @@ from stetl.etl import ETL
 from stetl.filters.archiveexpander import ZipArchiveExpander
 from tests.stetl_test_case import StetlTestCase
 
+
 class ZipArchiveExpanderTest(StetlTestCase):
     """Unit tests for ZipArchiveExpander plus deprecation"""
 
@@ -81,3 +82,37 @@ class ZipArchiveExpanderTest(StetlTestCase):
             self.assertTrue(os.path.exists(file_object_path))
             os.remove(file_object_path)
 
+    @mock.patch('stetl.outputs.standardoutput.StandardOutput.after_chain_invoke', autospec=True)
+    def test_dynamic_output(self, mock_after_chain_invoke):
+        temp_path = 'tests/data/temp/'
+
+        chain = StetlTestCase.get_chain(self.etl, index=2)
+        chain.run()
+
+        # ZIP file contains two GML files, both should be extracted; count is 3 because of final
+        # call, so the ZipArchiveExpander can indicate that no more files can be found.
+        self.assertTrue(mock_after_chain_invoke.called)
+        self.assertEqual(2, mock_after_chain_invoke.call_count)
+
+        # Check if temp dir exists
+        section = StetlTestCase.get_section(chain, 2)
+        target_dir_prefix = self.etl.configdict.get(section, 'target_dir')[16:-3]
+
+        temp_dirs = [s for s in os.listdir(temp_path) if 'temp_dynamic_dir_' in s]
+
+        self.assertEqual(1, len(temp_dirs))
+
+        output_dir = os.path.join(temp_path, temp_dirs[0])
+
+        file_objects = os.listdir(output_dir)
+
+        # 3 XML files in archive
+        self.assertEqual(3, len(file_objects))
+
+        for file_object in file_objects:
+            file_object_path = os.path.join(output_dir, file_object)
+            self.assertTrue(file_object.startswith('0221LIG'))
+            self.assertTrue(file_object.endswith('.xml'))
+
+            self.assertTrue(os.path.exists(file_object_path))
+            os.remove(file_object_path)
