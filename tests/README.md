@@ -30,7 +30,9 @@ The test coverage is written to the dir htmlcov.
 
 Mock objects: mock
 
-	pip install mock
+    mock is now part of the Python standard library, available as unittest.mock in Python 3.3 onwards.
+
+    https://github.com/testing-cabal/mock
 
 More information: http://www.voidspace.org.uk/python/mock/
 
@@ -39,14 +41,9 @@ Regarding the coverage: if you specify the tests directory, only the coverage of
 If you would like to see coverage for the source files as well, you need to execute nose2 from the Stetl root dir.
 
 ## Unit Testing within Docker Container
-
-In root dir:
-
-	docker build -t geopython/stetltest:latest -f Dockerfile.test .
 	
-Run `nose2` within Docker Image:
+Run `nose2` within standard Stetl Docker Image:
 
-	docker run geopython/stetltest:latest
+	docker run geopython/stetl:latest nose2
 
-See also the [.travis.yml](../.travis.yml) file.
-	
+See also the [GitHub Workflow file main.yml](../.github/workflows/main.yml) file.
